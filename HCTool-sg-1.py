@@ -1,30 +1,40 @@
+# coding: utf-8
 from huaweicloudsdkcore.auth.credentials import BasicCredentials, GlobalCredentials
 from huaweicloudsdkcore.exceptions import exceptions
 from huaweicloudsdkcore.http.http_config import HttpConfig
+
+"""
 # 导入指定云服务的库 huaweicloudsdk{service}
+"""
 from huaweicloudsdkvpc.v2 import *
 
+"""
+# 导入其它依赖库
+"""
 from urllib.request import urlopen
 from json import load, loads
 from Crypto.Cipher import AES
 import time, os, base64, sys, getopt
 
 aes_key_from_cli = ''
+ip_from_cli = ''
 
-# 从命令行获取解密秘钥
+"""
+# 从命令行获取解密秘钥、指定的IP地址等信息
+"""
 def start(argv):
     if (argv == []):
-        print('HCTool-XXX.py -k <aes_key> OR HCTool-XXX.py --key=<aes_key>')
+        print('Get useage info by # HCTool-XXX.py -h')
         sys.exit(2)
     
     try:
-        opts, args = getopt.getopt(argv, "hk:", ["help", "key="])
+        opts, args = getopt.getopt(argv, "hk:i:", ["help", "key=", "ip="])
     except getopt.GetoptError:
-        print('HCTool-XXX.py -k <aes_key> OR HCTool-XXX.py --key=<aes_key>')
+        print('Get useage info by # HCTool-XXX.py -h')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print('HCTool-XXX.py -k <aes_key> OR HCTool-XXX.py --key=<aes_key>')
+            print('# HCTool-XXX.py -k <aes_key> -i <ip_addr> OR HCTool-XXX.py --key=<aes_key> --ip=<ip_addr>')
             sys.exit()
         elif opt in ("-k", "--key"):
             global aes_key_from_cli
@@ -34,8 +44,17 @@ def start(argv):
                 sys.exit(2)
             else:
                 print({'create_security_group_rule_tool: message@start()': 'key is: ' + aes_key_from_cli})
-
+        elif opt in ("-i", "--ip"):
+            global ip_from_cli
+            ip_from_cli = arg
+            if (ip_from_cli != ''):
+                print({'create_security_group_rule_tool: message@start()': 'ip addr is: ' + ip_from_cli})
+            else:
+                print({'create_security_group_rule_tool: message@start()': 'ERROR: ip is NULL!'})
+                sys.exit(2)
+"""
 # en_val为经过base64编码后的密文string
+"""
 def decrypt_env(en_val):
     (aes_key, aes_iv, aes_mode) = (aes_key_from_cli, 'knx5FQtE4XOQ', AES.MODE_GCM)
     if (aes_key_from_cli == ''):
@@ -45,8 +64,10 @@ def decrypt_env(en_val):
     plain_val = aes_de_instance.decrypt(base64.b64decode(en_val.encode('utf-8'))).decode('utf-8')
     return plain_val
 
+"""
 # 获取个人云环境配置
 # en_cred_dict = {'EN_AK':' ','EN_SK':' ','EN_ProjectID':' ','Region':' '}
+"""
 def get_cred_config():
     en_env_data = os.getenv('EN_CRED_JSON_STR')
     en_cred_dict = loads(en_env_data)
@@ -62,8 +83,10 @@ def get_cred_config():
     endpoint = "https://" + "vpc." + region + ".myhwclouds.com"
     print({'create_security_group_rule_tool: message@get_cred_config()': 'current endpoint is: ' + endpoint})
     return (ak, sk, project_id, region, endpoint)
-    
+
+"""  
 # demo 列出所有VPC
+"""
 def list_vpc(client):
     try:
         request = ListVpcsRequest()
@@ -75,7 +98,9 @@ def list_vpc(client):
         print(e.error_code)
         print(e.error_msg)
 
-# demo 列出所有SecurityGroupRules  
+"""
+# demo 列出所有SecurityGroupRules
+"""
 def list_sg(client):
     try:
         request = ListSecurityGroupRulesRequest()
@@ -87,10 +112,15 @@ def list_sg(client):
         print(e.error_code)
         print(e.error_msg)
 
-# 创建放通通当前工具所在主机公网IP的安全组       
+"""
+# 创建放通通当前工具所在主机公网IP的安全组 
+"""
 def create_sg(client):
 
-    cur_ip = load(urlopen('https://jsonip.com'))['ip']
+    global ip_from_cli
+    cur_ip = ip_from_cli
+    if (cur_ip == ''):
+        cur_ip = load(urlopen('https://jsonip.com'))['ip']
     print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
     
     loca_ltime = time.asctime(time.localtime(time.time()))
