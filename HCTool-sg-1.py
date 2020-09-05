@@ -79,10 +79,11 @@ def get_cred_config():
     sk = decrypt_env(en_sk)
     project_id = decrypt_env(en_project_id)
     
-    region = en_cred_dict['Region']    
+    region = en_cred_dict['Region']
+    security_group_id = en_cred_dict['SecurityGroupID']  
     endpoint = "https://" + "vpc." + region + ".myhwclouds.com"
     print({'create_security_group_rule_tool: message@get_cred_config()': 'current endpoint is: ' + endpoint})
-    return (ak, sk, project_id, region, endpoint)
+    return (ak, sk, project_id, region, endpoint, security_group_id)
 
 """  
 # demo 列出所有VPC
@@ -115,19 +116,19 @@ def list_sg(client):
 """
 # 创建放通通当前工具所在主机公网IP的安全组 
 """
-def create_sg(client):
+def create_sg(client, security_group_id):
 
     global ip_from_cli
     cur_ip = ip_from_cli
     if (cur_ip == ''):
         cur_ip = load(urlopen('https://jsonip.com'))['ip']
-    print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
+        print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
     
     loca_ltime = time.asctime(time.localtime(time.time()))
     
     try:
         rule = CreateSecurityGroupRuleOption(\
-            security_group_id = "76216115-3a46-47d0-b4d2-bc9cd99b40b3", \
+            security_group_id, \
             description = loca_ltime, \
             direction = "ingress", \
             remote_ip_prefix= cur_ip + "/32")
@@ -145,7 +146,7 @@ if __name__ == "__main__":
 
     start(sys.argv[1:])
 
-    (ak, sk, project_id, region, endpoint) = get_cred_config()
+    (ak, sk, project_id, region, endpoint, security_group_id) = get_cred_config()
     
     config = HttpConfig.get_default_config()
     config.ignore_ssl_verification = True
@@ -159,4 +160,4 @@ if __name__ == "__main__":
 
     #list_vpc(vpc_client)
     #list_sg(vpc_client)
-    create_sg(vpc_client)
+    create_sg(vpc_client, security_group_id)
