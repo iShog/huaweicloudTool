@@ -16,6 +16,13 @@ from json import load, loads
 from Crypto.Cipher import AES
 import time, os, base64, sys, getopt
 
+"""
+# 导入IPy
+#    --(Class and tools for handling of IPv4 and IPv6 addresses and networks)
+#用于判断当前公网IP地址是IPv4 or IPv6
+"""
+import IPy
+
 aes_key_from_cli = ''
 ip_from_cli = ''
 
@@ -34,13 +41,13 @@ def start(argv):
         sys.exit(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print('# HCTool-XXX.py -k <aes_key> -i <ip_addr> OR HCTool-XXX.py --key=<aes_key> --ip=<ip_addr>')
+            print('# HCTool-XXX.py -k <aes_key> -i <ip_addr> OR # HCTool-XXX.py --key=<aes_key> --ip=<ip_addr>')
             sys.exit()
         elif opt in ("-k", "--key"):
             global aes_key_from_cli
             aes_key_from_cli = arg
             if (aes_key_from_cli == ''):
-                print({'create_security_group_rule_tool: message@start()': 'ERROR: key must not be NULL!'})
+                print({'create_security_group_rule_tool: error@start()': 'ERROR: key must not be NULL!'})
                 sys.exit(2)
             else:
                 print({'create_security_group_rule_tool: message@start()': 'key is: ' + aes_key_from_cli})
@@ -50,7 +57,7 @@ def start(argv):
             if (ip_from_cli != ''):
                 print({'create_security_group_rule_tool: message@start()': 'ip addr is: ' + ip_from_cli})
             else:
-                print({'create_security_group_rule_tool: message@start()': 'ERROR: ip is NULL!'})
+                print({'create_security_group_rule_tool: error@start()': 'ERROR: ip is NULL!'})
                 sys.exit(2)
 """
 # en_val为经过base64编码后的密文string
@@ -58,7 +65,7 @@ def start(argv):
 def decrypt_env(en_val):
     (aes_key, aes_iv, aes_mode) = (aes_key_from_cli, 'knx5FQtE4XOQ', AES.MODE_GCM)
     if (aes_key_from_cli == ''):
-        print({'create_security_group_rule_tool: message@decrypt_env()': 'ERROR: key must not be NULL!'})
+        print({'create_security_group_rule_tool: error@decrypt_env()': 'ERROR: key must not be NULL!'})
         sys.exit(2)
     aes_de_instance = AES.new(aes_key.encode('utf-8'), aes_mode, aes_iv.encode('utf-8'))
     plain_val = aes_de_instance.decrypt(base64.b64decode(en_val.encode('utf-8'))).decode('utf-8')
@@ -124,6 +131,20 @@ def create_sg(client, security_group_id):
         cur_ip = load(urlopen('https://jsonip.com'))['ip']
         print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
     
+    try:
+        if (IPy.IP(cur_ip).version() == 6):
+            ethertype = 'IPv6'
+            remote_ip_prefix= cur_ip
+        elif (IPy.IP(cur_ip).version() == 4):
+            ethertype = 'IPv4'
+            remote_ip_prefix= cur_ip
+        else:
+            print({'create_security_group_rule_tool: error@create_sg()': 'not IPv4 nor IPv6: ' + cur_ip})
+            sys.exit(2)
+    except ValueError:
+        print({'create_security_group_rule_tool: error@create_sg()': 'invaild IP addr: ' + cur_ip})
+        sys.exit(2)
+    
     loca_ltime = time.asctime(time.localtime(time.time()))
     
     try:
@@ -131,7 +152,8 @@ def create_sg(client, security_group_id):
             security_group_id, \
             description = loca_ltime, \
             direction = "ingress", \
-            remote_ip_prefix= cur_ip + "/32")
+            ethertype = ethertype, \
+            remote_ip_prefix = remote_ip_prefix)
         body = CreateSecurityGroupRuleRequestBody(rule)
         request = CreateSecurityGroupRuleRequest(body)
         response = client.create_security_group_rule(request)
