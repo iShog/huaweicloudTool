@@ -123,12 +123,30 @@ def list_sg(client):
 """
 # 创建放通通当前工具所在主机公网IP的安全组 
 """
+def get_pub_ip_from_inet():
+    ip_from_inet = ''
+    for num in range(1, 3):
+        if (num == 1):
+            ip_from_inet = load(urlopen('https://httpbin.org/ip'))['origin']
+        elif (num == 2):
+            ip_from_inet = load(urlopen('https://api.ipify.org/?format=json'))['ip']
+        else:            
+            ip_from_inet = load(urlopen('https://jsonip.com'))['ip']
+        
+        if (IPy.IP(ip_from_inet).version() == 4):
+            break  
+    
+    return ip_from_inet
+
+"""
+# 创建放通通当前工具所在主机公网IP的安全组 
+"""
 def create_sg(client, security_group_id):
 
     global ip_from_cli
     cur_ip = ip_from_cli
     if (cur_ip == ''):
-        cur_ip = load(urlopen('https://jsonip.com'))['ip']
+        cur_ip = get_pub_ip_from_inet()
         print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
     
     try:
