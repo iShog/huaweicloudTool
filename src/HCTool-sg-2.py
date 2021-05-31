@@ -1,4 +1,6 @@
 # coding: utf-8
+import json
+
 from huaweicloudsdkcore.auth.credentials import BasicCredentials
 from huaweicloudsdkcore.exceptions import exceptions
 from huaweicloudsdkcore.http.http_config import HttpConfig
@@ -25,9 +27,10 @@ import IPy
 
 aes_key_from_cli = ''
 ip_from_cli = ''
+date_to_be_deleted = ''
 
 """
-# 从命令行获取解密秘钥、指定的IP地址等信息
+# 从命令行获取解密秘钥、待删除rule的创建时间等信息
 """
 
 
@@ -37,29 +40,31 @@ def start(argv):
         sys.exit(2)
 
     try:
-        opts, args = getopt.getopt(argv, "hk:i:", ["help", "key=", "ip="])
+        opts, args = getopt.getopt(argv, "hk:d:", ["help", "key=", "date="])
     except getopt.GetoptError:
         print('Get useage info by # HCTool-XXX.py -h')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print('# HCTool-XXX.py -k <aes_key> -i <ip_addr> OR \n# HCTool-XXX.py --key=<aes_key> --ip=<ip_addr>')
+            print('# HCTool-XXX.py -k <aes_key> -d <date_to_be_deleted> OR \n# HCTool-XXX.py --key=<aes_key> '
+                  '--date=<date_to_be_deleted>')
             sys.exit()
         elif opt in ("-k", "--key"):
             global aes_key_from_cli
             aes_key_from_cli = arg
             if aes_key_from_cli == '':
-                print({'create_security_group_rule_tool: error@start()': 'ERROR: key must not be NULL!'})
+                print({'delete_security_group_rule_tool: error@start()': 'ERROR: key must not be NULL!'})
                 sys.exit(2)
             else:
-                print({'create_security_group_rule_tool: message@start()': 'key is: ' + aes_key_from_cli})
-        elif opt in ("-i", "--ip"):
-            global ip_from_cli
-            ip_from_cli = arg
-            if ip_from_cli != '':
-                print({'create_security_group_rule_tool: message@start()': 'ip addr is: ' + ip_from_cli})
+                print({'delete_security_group_rule_tool: message@start()': 'key is: ' + aes_key_from_cli})
+        elif opt in ("-d", "--date"):
+            global date_to_be_deleted
+            date_to_be_deleted = arg
+            if date_to_be_deleted != '':
+                print({'delete_security_group_rule_tool: message@start()': 'date to be deleted is: ' +
+                                                                           date_to_be_deleted})
             else:
-                print({'create_security_group_rule_tool: error@start()': 'ERROR: ip is NULL!'})
+                print({'delete_security_group_rule_tool: error@start()': 'ERROR: date is NULL!'})
                 sys.exit(2)
 
 
@@ -158,40 +163,42 @@ def get_pub_ip_from_inet():
 
 
 """
-# 创建放通通当前工具所在主机公网IP的安全组 
+# 删除current_rules中description包含condition的rule
 """
 
 
-def create_sg(client, security_group_id):
-    global ip_from_cli
-    cur_ip = ip_from_cli
-    if cur_ip == '':
-        cur_ip = get_pub_ip_from_inet()
-        print({'create_security_group_rule_tool: message@create_sg()': 'current public network IP is: ' + cur_ip})
+def delete_sg(client, security_group_id, current_rules, condition):
+    rule_id = ''
+    for rule in current_rules['security_group_rules']:
+        if condition in rule['description']:
+            rule_id = rule['id']
+            print("delete: " + json.dumps(rule))
+            try:
+                request = DeleteSecurityGroupRuleRequest(rule_id)
+                response = client.delete_security_group_rule(request)
+                print(response)
+            except exceptions.ClientRequestException as e:
+                print(e.status_code)
+                print(e.request_id)
+                print(e.error_code)
+                print(e.error_msg)
 
+
+"""
+# 列出当前所有rules
+# return (字典类型)rules
+"""
+
+
+def list_sg(client, security_group_id):
     try:
-        if IPy.IP(cur_ip).version() == 6:
-            ethertype = 'IPv6'
-            remote_ip_prefix = cur_ip
-        elif IPy.IP(cur_ip).version() == 4:
-            ethertype = 'IPv4'
-            remote_ip_prefix = cur_ip
-        else:
-            print({'create_security_group_rule_tool: error@create_sg()': 'not IPv4 nor IPv6: ' + cur_ip})
-            sys.exit(2)
-    except ValueError:
-        print({'create_security_group_rule_tool: error@create_sg()': 'invaild IP addr: ' + cur_ip})
-        sys.exit(2)
-
-    loca_ltime = time.asctime(time.localtime(time.time()))
-
-    try:
-        rule = CreateSecurityGroupRuleOption(security_group_id, description=loca_ltime, direction="ingress",
-                                             ethertype=ethertype, remote_ip_prefix=remote_ip_prefix)
-        body = CreateSecurityGroupRuleRequestBody(rule)
-        request = CreateSecurityGroupRuleRequest(body)
-        response = client.create_security_group_rule(request)
-        print(response)
+        request = ListSecurityGroupRulesRequest()
+        response = client.list_security_group_rules(request)
+        # print(response.to_dict()['security_group_rules'])
+        # for rule in response.to_dict()['security_group_rules']:
+        #     if 'May  8' in rule['description']:
+        #         print("list: " + rule['id'])
+        return response.to_dict()
     except exceptions.ClientRequestException as e:
         print(e.status_code)
         print(e.request_id)
@@ -216,4 +223,7 @@ if __name__ == "__main__":
 
     # list_vpc(vpc_client)
     # list_sg(vpc_client)
-    create_sg(vpc_client, security_group_id)
+
+    current_rules = list_sg(vpc_client, security_group_id)
+    condition = date_to_be_deleted
+    delete_sg(vpc_client, security_group_id, current_rules, condition)
