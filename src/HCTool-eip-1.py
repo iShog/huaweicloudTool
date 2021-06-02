@@ -10,9 +10,9 @@ from huaweicloudsdkeip.v2.region.eip_region import EipRegion
 # 导入其它依赖库
 """
 # from urllib.request import urlopen
-from json import load, loads
+from json import loads
 from Crypto.Cipher import AES
-import time, os, base64, sys, getopt
+import os, base64, sys, getopt
 
 """
 # 导入IPy
@@ -21,12 +21,14 @@ import time, os, base64, sys, getopt
 """
 # import IPy
 
+tool_function = "EIP Tool"
+
 aes_key_from_cli = ''
 ip_from_cli = ''
 date_to_be_deleted = ''
 bandwidth_size = ''
 operation = ''
-eip_name = "tempEip"
+bandwidth_name = "tempEip"
 
 """
 # 从命令行获取解密秘钥、待删除rule的创建时间等信息
@@ -35,14 +37,15 @@ eip_name = "tempEip"
 
 def start(argv):
     if not argv:
-        print('Get useage info by # HCTool-XXX.py -h')
+        print('Get usage info by # HCTool-XXX.py -h')
         sys.exit(2)
 
     try:
         opts, args = getopt.getopt(argv, "hk:b:o:", ["help", "key=", "bandwidth=", "operation="])
     except getopt.GetoptError:
-        print('Get useage info by # HCTool-XXX.py -h')
+        print('Get usage info by # HCTool-XXX.py -h')
         sys.exit(2)
+
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             print('# HCTool-XXX.py -k <aes_key> -o <operation: add or delete> -b <bandwidth_size> OR \n'
@@ -51,29 +54,29 @@ def start(argv):
         elif opt in ("-k", "--key"):
             global aes_key_from_cli
             aes_key_from_cli = arg
-            if aes_key_from_cli == '':
-                print({'eip_tool: error@start()': 'ERROR: key must not be NULL!'})
-                sys.exit(2)
-            else:
-                print({'eip_tool: message@start()': 'key is: ' + aes_key_from_cli})
+            console_log("INFO", start.__name__, "key is: " + aes_key_from_cli, None)
         elif opt in ("-o", "--operation"):
             global operation
             operation = arg
-            if operation == '':
-                print({'eip_tool: error@start()': 'ERROR: operation must not be NULL!'})
+            if operation != "add" and operation != "delete":
+                console_log("ERROR", start.__name__, "operation must not be add or delete!", None)
                 sys.exit(2)
-            else:
-                print({'eip_tool: message@start()': 'operation is: ' + operation})
+            console_log("INFO", start.__name__, "operation is: " + operation, None)
         elif opt in ("-b", "--bandwidth"):
             global bandwidth_size
             bandwidth_size = arg
             if bandwidth_size != '':
-                print({'eip_tool: message@start()': 'bandwidth to be created is: ' +
-                                                    bandwidth_size})
+                console_log("INFO", start.__name__, 'bandwidth to be created is: ' + bandwidth_size + 'M', None)
             else:
                 bandwidth_size = 5
-                print({'eip_tool: message@start()': '(DEFAULT)bandwidth to be created is: ' +
-                                                    bandwidth_size})
+                console_log("INFO", start.__name__, '(DEFAULT)bandwidth to be created is: ' + bandwidth_size + 'M', None)
+
+    if aes_key_from_cli == '':
+        console_log("ERROR", start.__name__, "key must not be NULL!", None)
+        sys.exit(2)
+    if operation == '':
+        console_log("ERROR", start.__name__, "operation must not be NULL!", None)
+        sys.exit(2)
 
 
 """
@@ -84,7 +87,7 @@ def start(argv):
 def decrypt_env(en_val):
     (aes_key, aes_iv, aes_mode) = (aes_key_from_cli, 'knx5FQtE4XOQ', AES.MODE_GCM)
     if aes_key_from_cli == '':
-        print({'eip_tool: error@decrypt_env()': 'ERROR: key must not be NULL!'})
+        console_log("ERROR", decrypt_env.__name__, "key must not be NULL!", None)
         sys.exit(2)
     aes_de_instance = AES.new(aes_key.encode('utf-8'), aes_mode, aes_iv.encode('utf-8'))
     plain_val = aes_de_instance.decrypt(base64.b64decode(en_val.encode('utf-8'))).decode('utf-8')
@@ -111,30 +114,108 @@ def get_cred_config():
     region = en_cred_dict['Region']
     security_group_id = en_cred_dict['SecurityGroupID']
     endpoint = "https://" + "vpc." + region + ".myhwclouds.com"
-    print({'eip_tool: message@get_cred_config()': 'current region is: ' + region})
-    # print({'create_security_group_rule_tool: message@get_cred_config()': 'current endpoint is: ' + endpoint})
+    console_log("INFO", get_cred_config.__name__, 'current region is: ' + region, None)
     return ak, sk, project_id, region, endpoint, security_group_id
+
+
+def console_log(log_level, log_location, log_str_content, log_object_content):
+    if log_level is None:
+        log_level = "DEFAULT"
+    if log_location is None:
+        log_location = "NOT PROVIDED"
+    else:
+        log_location += "()"
+    if log_object_content is not None:
+        print("--" + tool_function + "- " + log_level + "@" + log_location + ": ")
+        if log_str_content is not None:
+            print(log_str_content)
+        print(log_object_content)
+        print("----\n")
+    else:
+        if log_str_content is not None:
+            print("--" + tool_function + "-- " + log_level + "@" + log_location + ": " + log_str_content)
+            print("----\n")
+
+
+def sdk_exception_log(log_location, log_object_content):
+    log_level = "EXCEPTION"
+    if log_location is None:
+        log_location = "NOT PROVIDED"
+    else:
+        log_location += "()"
+    print("--" + tool_function + "- " + log_level + "@" + log_location + ": ")
+    print("status_code: ")
+    print(log_object_content.status_code)
+    print("request_id: ")
+    print(log_object_content.request_id)
+    print("error_code: ")
+    print(log_object_content.error_code)
+    print("error_msg: ")
+    print(log_object_content.error_msg)
+    print("----\n")
+
+
+"""
+# 根据命令行获取的带宽大小创建临时EIP
+# return EIP对象字典
+"""
 
 
 def create_temp_eip(eip_client, bandwidth_size):
     size = bandwidth_size
+    global bandwidth_name
     try:
         eip = CreatePublicipOption(type="5_bgp")
-        bandwidth = CreatePublicipBandwidthOption(name="tempEip", size=size, charge_mode="bandwidth", share_type="PER")
+        bandwidth = CreatePublicipBandwidthOption(name=bandwidth_name, size=size, charge_mode="bandwidth",
+                                                  share_type="PER")
         body = CreatePublicipRequestBody(bandwidth=bandwidth, publicip=eip)
         request = CreatePublicipRequest(body)
         response = eip_client.create_publicip(request)
-        print(response)
+        console_log("INFO", create_temp_eip.__name__, "Create API response: ", response)
         return response.to_dict()
     except exceptions.ClientRequestException as e:
-        print(e.status_code)
-        print(e.request_id)
-        print(e.error_code)
-        print(e.error_msg)
+        sdk_exception_log(create_temp_eip.__name__, e)
 
 
-def delete_temp_eip(eip_client, eip_name):
-    print("...")
+"""
+# 删除临时EIP（当前不支持指定删除对象）
+"""
+
+
+def delete_temp_eip(eip_client, bandwidth_name):
+    temp_eip_id = get_temp_eip(eip_client, bandwidth_name)
+    if temp_eip_id is not None:
+        console_log("INFO", delete_temp_eip.__name__, "ID to be deleted: "+ temp_eip_id, None)
+        try:
+            request = DeletePublicipRequest()
+            request.publicip_id = temp_eip_id
+            response = client.delete_publicip(request)
+            console_log("INFO", delete_temp_eip.__name__, "Delete API response: ", response)
+        except exceptions.ClientRequestException as e:
+            sdk_exception_log(delete_temp_eip.__name__, e)
+    else:
+        console_log("ERROR", delete_temp_eip.__name__, "there is not a temp eip!", None)
+
+
+"""
+# 根据临时EIP的bandwidth_name获取EIP ID
+# return 临时EIP的ID
+"""
+
+
+def get_temp_eip(eip_client, bandwidth_name):
+    try:
+        request = ListPublicipsRequest()
+        response = eip_client.list_publicips(request)
+        console_log("INFO", get_temp_eip.__name__, "List API response: ", response)
+        eip_list = response.to_dict()
+        for eip_item in eip_list['publicips']:
+            if eip_item['bandwidth_name'] == bandwidth_name:
+                temp_eip_id = eip_item['id']
+                console_log("INFO", get_temp_eip.__name__, "ID of " + bandwidth_name + " is : " + temp_eip_id, None)
+                return temp_eip_id
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(get_temp_eip.__name__, e)
 
 
 if __name__ == "__main__":
@@ -144,7 +225,7 @@ if __name__ == "__main__":
 
     credentials = BasicCredentials(ak, sk, project_id)
     config = HttpConfig.get_default_config()
-    config.ignore_ssl_verification = True
+    config.ignore_ssl_verification = False
 
     client = EipClient.new_builder() \
         .with_http_config(config) \
@@ -154,8 +235,6 @@ if __name__ == "__main__":
 
     if operation == 'add':
         temp_eip = create_temp_eip(client, bandwidth_size)
-        print({'eip_tool: message@main()': 'temp eip address is: ' + temp_eip['publicip']['public_ip_address']})
+        console_log("INFO", __name__, 'temp eip address is: ' + temp_eip['publicip']['public_ip_address'], None)
     elif operation == "delete":
-        delete_temp_eip(client, eip_name)
-
-
+        delete_temp_eip(client, bandwidth_name)

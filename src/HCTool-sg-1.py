@@ -7,6 +7,7 @@ from huaweicloudsdkcore.http.http_config import HttpConfig
 # 导入指定云服务的库 huaweicloudsdk{service}
 """
 from huaweicloudsdkvpc.v2 import *
+from huaweicloudsdkvpc.v2.region.vpc_region import VpcRegion
 
 """
 # 导入其它依赖库
@@ -33,13 +34,13 @@ ip_from_cli = ''
 
 def start(argv):
     if not argv:
-        print('Get useage info by # HCTool-XXX.py -h')
+        print('Get usage info by # HCTool-XXX.py -h')
         sys.exit(2)
 
     try:
         opts, args = getopt.getopt(argv, "hk:i:", ["help", "key=", "ip="])
     except getopt.GetoptError:
-        print('Get useage info by # HCTool-XXX.py -h')
+        print('Get usage info by # HCTool-XXX.py -h')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -205,13 +206,13 @@ if __name__ == "__main__":
     (ak, sk, project_id, region, endpoint, security_group_id) = get_cred_config()
 
     config = HttpConfig.get_default_config()
-    config.ignore_ssl_verification = True
+    config.ignore_ssl_verification = False
     credentials = BasicCredentials(ak, sk, project_id)
 
     vpc_client = VpcClient.new_builder(VpcClient) \
         .with_http_config(config) \
         .with_credentials(credentials) \
-        .with_endpoint(endpoint) \
+        .with_region(VpcRegion.value_of(region)) \
         .build()
 
     # list_vpc(vpc_client)
