@@ -12,7 +12,7 @@ from huaweicloudsdkeip.v2.region.eip_region import EipRegion
 # from urllib.request import urlopen
 from json import loads
 from Crypto.Cipher import AES
-import os, base64, sys, getopt
+import os, base64, sys, getopt, time
 
 """
 # 导入IPy
@@ -28,7 +28,10 @@ ip_from_cli = ''
 date_to_be_deleted = ''
 bandwidth_size = ''
 operation = ''
-bandwidth_name = "tempEip"
+bandwidth_name = 'tempEip'
+server_port_id = ''
+server_name_key = 'ecs-hk'
+original_eip_id = ''
 
 """
 # 从命令行获取解密秘钥、待删除rule的创建时间等信息
@@ -48,8 +51,10 @@ def start(argv):
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print('# HCTool-XXX.py -k <aes_key> -o <operation: add or delete> -b <bandwidth_size> OR \n'
-                  '# HCTool-XXX.py --key=<aes_key> --operation=<operation: add or delete> --bandwidth=<bandwidth_size>')
+            print('# HCTool-XXX.py -k <aes_key> -o <operation: add or delete or list or default> '
+                  '-b <bandwidth_size> OR \n'
+                  '# HCTool-XXX.py --key=<aes_key> --operation=<operation: add or delete or list or default> '
+                  '--bandwidth=<bandwidth_size>')
             sys.exit()
         elif opt in ("-k", "--key"):
             global aes_key_from_cli
@@ -58,8 +63,8 @@ def start(argv):
         elif opt in ("-o", "--operation"):
             global operation
             operation = arg
-            if operation != "add" and operation != "delete":
-                console_log("ERROR", start.__name__, "operation must not be add or delete!", None)
+            if operation != "add" and operation != "delete" and operation != "list" and operation != "default":
+                console_log("ERROR", start.__name__, "operation must not be add or delete or list!", None)
                 sys.exit(2)
             console_log("INFO", start.__name__, "operation is: " + operation, None)
         elif opt in ("-b", "--bandwidth"):
@@ -69,14 +74,21 @@ def start(argv):
                 console_log("INFO", start.__name__, 'bandwidth to be created is: ' + bandwidth_size + 'M', None)
             else:
                 bandwidth_size = 5
-                console_log("INFO", start.__name__, '(DEFAULT)bandwidth to be created is: ' + bandwidth_size + 'M', None)
+                console_log("INFO", start.__name__, '(DEFAULT)bandwidth to be created is: ' + bandwidth_size + 'M',
+                            None)
 
     if aes_key_from_cli == '':
         console_log("ERROR", start.__name__, "key must not be NULL!", None)
         sys.exit(2)
+    if operation == 'add' or operation == 'default':
+        if bandwidth_size == '':
+            bandwidth_size = 5
     if operation == '':
-        console_log("ERROR", start.__name__, "operation must not be NULL!", None)
-        sys.exit(2)
+        # 默认进行创建指定带宽大小的temp EIP，并绑定到server上
+        operation = 'default'
+        console_log("INFO", start.__name__, "operation will be set to default: " + operation, None)
+        if bandwidth_size == '':
+            bandwidth_size = 5
 
 
 """
@@ -185,7 +197,7 @@ def create_temp_eip(eip_client, bandwidth_size):
 def delete_temp_eip(eip_client, bandwidth_name):
     temp_eip_id = get_temp_eip(eip_client, bandwidth_name)
     if temp_eip_id is not None:
-        console_log("INFO", delete_temp_eip.__name__, "ID to be deleted: "+ temp_eip_id, None)
+        console_log("INFO", delete_temp_eip.__name__, "ID to be deleted: " + temp_eip_id, None)
         try:
             request = DeletePublicipRequest()
             request.publicip_id = temp_eip_id
@@ -205,17 +217,202 @@ def delete_temp_eip(eip_client, bandwidth_name):
 
 def get_temp_eip(eip_client, bandwidth_name):
     try:
-        request = ListPublicipsRequest()
-        response = eip_client.list_publicips(request)
-        console_log("INFO", get_temp_eip.__name__, "List API response: ", response)
+        # request = ListPublicipsRequest()
+        # response = eip_client.list_publicips(request)
+        response = list_all_eip(eip_client)
+        # console_log("INFO", get_temp_eip.__name__, "List API response: ", response)
         eip_list = response.to_dict()
+        temp_eip_id = None
         for eip_item in eip_list['publicips']:
             if eip_item['bandwidth_name'] == bandwidth_name:
                 temp_eip_id = eip_item['id']
                 console_log("INFO", get_temp_eip.__name__, "ID of " + bandwidth_name + " is : " + temp_eip_id, None)
                 return temp_eip_id
+        console_log("ERROR", get_temp_eip.__name__, "there is not a temp eip!", None)
+        return temp_eip_id
     except exceptions.ClientRequestException as e:
         sdk_exception_log(get_temp_eip.__name__, e)
+
+
+"""
+# 获取原EIP IP
+# return 原EIP IP
+"""
+
+
+def get_original_eip(eip_client):
+    global server_name_key
+    global original_eip_id
+    try:
+        response = list_all_eip(eip_client)
+        eip_list = response.to_dict()
+        for eip_item in eip_list['publicips']:
+            if server_name_key in eip_item['bandwidth_name']:
+                original_eip_id = eip_item['id']
+                console_log("INFO", get_original_eip.__name__, "ID of original EIP is : " + original_eip_id, None)
+                return original_eip_id
+        console_log("ERROR", get_original_eip.__name__, "get original EIP failed!", None)
+        return original_eip_id
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(get_temp_eip.__name__, e)
+
+
+"""
+# 获取ecs server的port id，用于后续解绑、绑定EIP
+# return port id
+"""
+
+
+def get_server_port_id(eip_client):
+    global server_port_id
+    try:
+        response = list_all_eip(eip_client)
+        eip_list = response.to_dict()
+        for eip_item in eip_list['publicips']:
+            if eip_item['port_id'] is not None:
+                server_port_id = eip_item['port_id']
+                console_log("INFO", get_server_port_id.__name__, "Server's port ID is : " + server_port_id, None)
+                return server_port_id
+        console_log("ERROR", get_server_port_id.__name__, "get server port ID failed!", None)
+        return server_port_id
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(get_server_port_id.__name__, e)
+
+
+"""
+# 获取ecs server的当前的EIP name
+# return EIP name
+"""
+
+
+def get_current_eip(eip_client):
+    try:
+        response = list_all_eip(eip_client)
+        eip_list = response.to_dict()
+        current_eip_name = None
+        for eip_item in eip_list['publicips']:
+            if eip_item['port_id'] is not None:
+                current_eip_name = eip_item['bandwidth_name']
+                console_log("INFO", get_current_eip.__name__, "Current EIP name is : " + current_eip_name, None)
+                return current_eip_name
+        return current_eip_name
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(get_server_port_id.__name__, e)
+
+
+"""
+# 列出当前所有EIP
+# return: instance of ListPublicipsResponse
+"""
+
+
+def list_all_eip(eip_client):
+    try:
+        request = ListPublicipsRequest()
+        response = eip_client.list_publicips(request)
+        console_log("INFO", list_all_eip.__name__, "List API response: ", response)
+        return response
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(list_all_eip.__name__, e)
+
+
+"""
+# 更新server EIP至新申请的temp EIP，前提是temp EIP已经创建
+# return temp EIP address
+"""
+
+
+def update_server_eip(eip_client):
+    global bandwidth_name
+    global original_eip_id
+    global server_port_id
+    original_eip_id = get_original_eip(eip_client)
+    server_port_id = get_server_port_id(eip_client)
+    temp_eip_id = get_temp_eip(eip_client, bandwidth_name)
+    if temp_eip_id is None:
+        console_log("INFO", update_server_eip.__name__, "Now there is not a temp EIP!"
+                                                        " A new EIP will be created after 5 seconds", None)
+        wait(5)
+        temp_eip = create_temp_eip(client, bandwidth_size)
+        temp_eip_id = temp_eip['publicip']['id']
+        console_log("INFO", update_server_eip.__name__, 'temp eip address is: ' +
+                    temp_eip['publicip']['public_ip_address'], None)
+
+    # 解绑当前EIP
+    try:
+        request = UpdatePublicipRequest()
+        request.publicip_id = original_eip_id
+        update_option = UpdatePublicipOption()
+        request.body = UpdatePublicipsRequestBody(
+            publicip=update_option
+        )
+        response = client.update_publicip(request)
+        console_log("INFO", update_server_eip.__name__, "Unbind original EIP\nUpdate API response: ", response)
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(update_server_eip.__name__, e)
+
+    # 绑定temp EIP
+    try:
+        request = UpdatePublicipRequest()
+        request.publicip_id = temp_eip_id
+        update_option = UpdatePublicipOption(port_id=server_port_id)
+        request.body = UpdatePublicipsRequestBody(
+            publicip=update_option
+        )
+        response = client.update_publicip(request)
+        console_log("INFO", update_server_eip.__name__, "Bind temp EIP\nUpdate API response: ", response)
+        # print(response.to_dict()['publicip']['public_ip_address'])
+        console_log("INFO", update_server_eip.__name__, "You can use the temp IP to reconnect: " +
+                    response.to_dict()['publicip']['public_ip_address'], None)
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(update_server_eip.__name__, e)
+
+
+"""
+# 更新server EIP至新申请的temp EIP，前提是temp EIP已经创建
+# return temp EIP address
+"""
+
+
+def recover_server_eip(eip_client):
+    global bandwidth_name
+    global original_eip_id
+    global server_port_id
+    server_port_id = get_server_port_id(eip_client)
+    temp_eip_id = get_temp_eip(eip_client, bandwidth_name)
+    original_eip_id = get_original_eip(eip_client)
+
+    # 解绑当前EIP
+    try:
+        request = UpdatePublicipRequest()
+        request.publicip_id = temp_eip_id
+        update_option = UpdatePublicipOption()
+        request.body = UpdatePublicipsRequestBody(
+            publicip=update_option
+        )
+        response = client.update_publicip(request)
+        console_log("INFO", recover_server_eip.__name__, "Unbind temp EIP\nUpdate API response: ", response)
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(recover_server_eip.__name__, e)
+
+    # 绑定原 EIP
+    try:
+        request = UpdatePublicipRequest()
+        request.publicip_id = original_eip_id
+        update_option = UpdatePublicipOption(port_id=server_port_id)
+        request.body = UpdatePublicipsRequestBody(
+            publicip=update_option
+        )
+        response = client.update_publicip(request)
+        console_log("INFO", recover_server_eip.__name__, "Bind original EIP\nUpdate API response: ", response)
+    except exceptions.ClientRequestException as e:
+        sdk_exception_log(recover_server_eip.__name__, e)
+
+
+def wait(second):
+    for i in range(0, second):
+        time.sleep(1)
+        print(second - i)
 
 
 if __name__ == "__main__":
@@ -237,4 +434,11 @@ if __name__ == "__main__":
         temp_eip = create_temp_eip(client, bandwidth_size)
         console_log("INFO", __name__, 'temp eip address is: ' + temp_eip['publicip']['public_ip_address'], None)
     elif operation == "delete":
+        if get_current_eip(client) == "tempEip":
+            recover_server_eip(client)
         delete_temp_eip(client, bandwidth_name)
+        list_all_eip(client)
+    elif operation == "list":
+        list_all_eip(client)
+    elif operation == 'default':
+        update_server_eip(client)
